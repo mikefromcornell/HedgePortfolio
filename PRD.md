@@ -35,12 +35,25 @@ The tool ingests real-time market data (Yahoo Finance + options chains) and runs
 - Historical daily prices (5+ years) for backtesting
 - Implied vol surface & term structure
 
-### 4.2 Strategies (Hard-coded 5)
-1. **Unhedged QQQ** (`QQQ`)
-2. **QQQ + 5% OTM Put Hedge** (protective put)
-3. **MNQ 2x leveraged futures + OTM put spread**
-4. **QQQ Deep ITM Call (0.90 delta) + cash**
-5. **SGOV 100% allocation** (risk-free benchmark)
+### 4.2 Strategies — Combinatorial Long + Hedge (Normalized Notional)
+All portfolios are normalized to **equivalent $100k notional long exposure** for fair comparison.
+
+**LONGS (5 choices)**
+- QQQ Equities
+- QQQ Deep ITM Calls (≈0.85–0.95 delta)
+- QQQ ATM Calls (≈0.50 delta)
+- MNQ Micro E-mini Futures (2× or 3× notional)
+- SGOV (cash benchmark)
+
+**HEDGES (6 choices)**
+- QQQ 10% OTM Puts
+- QQQ 20% OTM Puts
+- VIXY (volatility ETF)
+- SQQQ ATM Calls (inverse exposure)
+- Bear Put Spread (10% OTM long put + 20% OTM short put)
+- Collar (long 10% OTM put + short 5% OTM call)
+
+Every valid combination = 1 Long + 1 Hedge (30 total portfolios). All metrics normalized to $100k notional long exposure.
 
 ### 4.3 Quantitative Engine
 - Monte Carlo: Geometric Brownian Motion + jump diffusion (Merton model)
