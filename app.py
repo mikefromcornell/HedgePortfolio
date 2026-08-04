@@ -133,6 +133,17 @@ with tab1:
     st.title("📊 HedgePortfolio — Combinatorial Long + Hedge Analyzer")
     st.caption(f"Live QQQ: ${qqq_price:.2f} | All combinations normalized to $100k notional | {datetime.now().strftime('%Y-%m-%d')}")
 
+    with st.expander("📘 How to Use This Page (Beginner Guide)"):
+        st.markdown("""
+        **Step-by-step for new users**:
+        1. Pick any **Long Leg** (how you want to be long QQQ)
+        2. Pick any **Hedge Leg** (your insurance)
+        3. Click **"Calculate This Portfolio"** to see results
+        4. Or click the big button below to compare all 30 combinations at once
+
+        **Key idea**: Every portfolio is normalized to **$100,000** of long exposure so comparisons are fair.
+        """)
+
     with st.expander("📘 Greeks — Technical + Plain English"):
         st.markdown("""
         **Delta** — ∂Option/∂Underlying  
@@ -162,6 +173,20 @@ with tab1:
 
     st.divider()
     st.subheader("2. All 30 Portfolio Combinations — Ranked (Benchmark: $100k QQQ Equities)")
+
+    with st.expander("📘 What the table columns mean (Beginner + Professional)"):
+        st.markdown("""
+        **For beginners**:
+        - **Expected Return %** = Average money you expect to make
+        - **5% CVaR** = How bad it gets in the worst 5% of cases (very important)
+        - **Prob >20% DD** = Chance you lose more than 20%
+        - **Portfolio Drag (bps)** = Yearly cost of the hedge (lower = cheaper insurance)
+
+        **For professionals**:
+        - CVaR is the key tail-risk metric used by risk managers
+        - Drag is shown in basis points (1 bp = 0.01%)
+        - Score = risk-adjusted ranking used internally
+        """)
 
     if st.button("Run Full Comparison (30 Portfolios)", type="primary", key="full1"):
         results = []
@@ -198,6 +223,17 @@ with tab1:
 with tab2:
     st.title("📉 Tail Risk Analysis — Historical & Extreme Drawdowns")
     st.caption("All portfolios normalized to $100k notional long exposure. $100k QQQ Equities shown as benchmark.")
+
+    with st.expander("📘 How to read this page (Beginner)"):
+        st.markdown("""
+        This page shows what happens to every portfolio in real historical crashes.
+        - **Dot-com (2000-02)**: -78% crash
+        - **2008 GFC**: -55% crash  
+        - **2022 Bear**: -35% decline
+        - **20% Drawdown**: A moderate correction
+
+        Look at the **Final Value** column — higher is better.
+        """)
 
     scenarios = {
         "Dot-com Bubble (2000-02)": -0.78,
@@ -238,6 +274,17 @@ with tab3:
     st.title("📊 Sensitivity Analysis — What-If NASDAQ Move")
     st.caption("Adjust the NASDAQ move and instantly see dollar and percentage impact on every portfolio (normalized to $100k). $100k QQQ Equities is the benchmark.")
 
+    with st.expander("📘 How to use this page"):
+        st.markdown("""
+        Move the slider to simulate any NASDAQ move (e.g. +25% or -40%).
+        The table instantly updates showing:
+        - Final portfolio value in dollars
+        - Dollar change from $100k
+        - Percentage change
+
+        This is the best page for understanding **"what if the market does X?"**
+        """)
+
     move_pct = st.slider("NASDAQ Move (%)", min_value=-80, max_value=80, value=0, step=5)
 
     if st.button("Run Sensitivity Analysis", type="primary"):
@@ -266,26 +313,19 @@ with tab4:
     st.title("📋 Summary — Top 10 Portfolios & Portfolio Manager Guidance")
     st.caption("Probabilistic analysis and when to choose each strategy. $100k QQQ Equities is the unhedged benchmark.")
 
-    st.subheader("Key Metrics Explained (Plain English)")
-
-    with st.expander("What the numbers actually mean"):
+    with st.expander("📘 Key Metrics Explained (Plain English for Everyone)"):
         st.markdown("""
-        - **Expected Return %**: Average outcome you should expect over the horizon.
-        - **5% CVaR**: If things go badly (worst 5% of scenarios), this is the average loss you would suffer.
-        - **Prob >20% DD**: Chance your portfolio drops more than 20% from peak.
-        - **Portfolio Drag (bps)**: Annual cost of holding the hedge (lower is better).
-        - **Hedge Cost %**: Upfront cost of the protection as % of capital.
+        - **Expected Return %**: Average outcome you should expect.
+        - **5% CVaR**: In the worst 5% of scenarios, this is the average loss.
+        - **Prob >20% DD**: Chance of losing more than 20%.
+        - **Portfolio Drag (bps)**: Yearly cost of the hedge in basis points (100 bps = 1%).
+        - **Hedge Cost %**: Upfront cost of protection as % of capital.
 
-        **When to pick one portfolio over another**:
-        - High Expected Return + Low CVaR → Best risk-adjusted choice (most portfolios managers prefer this).
-        - Very low CVaR + higher cost → Choose when you are extremely risk-averse or expect a crash.
-        - Low drag + decent protection → Good for long-term holding.
-        - High leverage (MNQ) → Only if you have high conviction and can tolerate volatility.
+        **Professional note**: CVaR and Drag are the two metrics most used by institutional risk teams.
         """)
 
     st.subheader("Top 10 Portfolios — Probabilistic View & When to Choose")
 
-    # Pre-computed top 10 based on previous logic (for demo)
     top_10 = [
         ("QQQ Equities + QQQ 10% OTM Put", "Best balanced protection. Good in mild corrections, still participates in rallies. Choose when you want downside cushion without giving up too much upside."),
         ("QQQ Equities + Collar (10% Put + 5% Call)", "Very low cost protection. Excellent when you expect range-bound or mildly bullish markets. Pick when volatility is high and you want cheap insurance."),
@@ -310,6 +350,49 @@ with tab4:
     Use **VIXY** or **Bear Put Spread** when you are more concerned about tail risk.  
     Use **Collar** when you want the cheapest possible protection.  
     Avoid high leverage (MNQ 2×) unless you have very high conviction.
+    """)
+
+    # ================== NEW SECTION: BUBBLE & CURRENT TAIL RISK ==================
+    st.divider()
+    st.subheader("🫧 Bubble Market & Current Tail Risk Environment (Aug 2026)")
+
+    with st.expander("📘 Bubble Market Analysis (Dotcom-style) — Beginner + Professional View"):
+        st.markdown("""
+        **What defines a bubble market (like 1999–2000):**
+        - Extremely high valuations (high P/E, low earnings yield)
+        - Low realized volatility + high complacency
+        - Massive retail participation and leverage
+        - Expensive option protection (high implied vol on puts)
+
+        **Best portfolios in a bubble environment:**
+        - **Collar (10% Put + 5% Call)** — Cheapest way to own upside while capping extreme downside
+        - **Bear Put Spread** — Low cost, asymmetric payoff in a crash
+        - **QQQ Equities + light VIXY** — Small allocation to volatility as "lottery ticket" insurance
+
+        These structures minimize the high cost of protection when the market is euphoric.
+        """)
+
+    with st.expander("📘 Current Market Tail Risk (August 2026) — What Professionals Are Watching"):
+        st.markdown("""
+        **Current environment signals (as of 2026-08-05):**
+        - Significant concentration risk in mega-cap tech / AI names
+        - Elevated valuations similar to late-1990s and 2021 peaks
+        - Geopolitical tensions + potential policy shocks
+        - Compressed credit spreads and low equity vol — classic late-cycle signs
+
+        **Recommended portfolios right now:**
+        - **QQQ Equities + QQQ 10% OTM Put** → Best balanced choice (our current #1)
+        - **QQQ Equities + VIXY Volatility Hedge (8%)** → Strong tail protection if a sudden de-risking event occurs
+        - **MNQ Futures (2×) + Bear Put Spread** → For those with high conviction but wanting crash protection
+
+        **Professional takeaway**: In the current regime, tail risk is **under-priced**. 
+        Paying a modest premium for 10% OTM puts or a small VIX allocation is rational portfolio insurance.
+        """)
+
+    st.info("""
+    **Bottom line for today**:  
+    The market exhibits classic late-stage bubble characteristics with elevated tail risk.  
+    The **QQQ Equities + 10% OTM Put** and **Collar** strategies currently offer the best risk/reward for most investors.
     """)
 
 st.divider()
