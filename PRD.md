@@ -55,6 +55,15 @@ All portfolios are normalized to **equivalent $100k notional long exposure** for
 
 Every valid combination = 1 Long + 1 Hedge (30 total portfolios). All metrics normalized to $100k notional long exposure.
 
+### 4.5 Tail Risk Tab (New)
+Dedicated analysis of all 30 portfolios under four historical/extreme drawdown scenarios:
+1. Dot-com bubble (~-78%)
+2. 2008 GFC (~-55%)
+3. 2022 bear market (~-35%)
+4. Moderate 20% drawdown
+
+Metrics shown: Portfolio P&L, remaining capital, hedge effectiveness, and ranking by resilience.
+
 ### 4.3 Quantitative Engine
 - Monte Carlo: Geometric Brownian Motion + jump diffusion (Merton model)
 - Parameters: mu, sigma (from historical + implied), skew/kurtosis

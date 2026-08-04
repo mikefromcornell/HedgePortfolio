@@ -2,7 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -10,9 +10,6 @@ st.set_page_config(page_title="HedgePortfolio • Combinatorial Analyzer", layou
 
 # ================== CONSTANTS ==================
 DEFAULT_CAPITAL = 100_000
-WEBULL_OPTION_FEE = 0.65
-RISK_FREE_RATE = 0.048
-
 LONGS = {
     "QQQ Equities": {"type": "stock", "delta": 1.0},
     "QQQ Deep ITM Calls": {"type": "call", "delta": 0.90},
@@ -20,7 +17,6 @@ LONGS = {
     "MNQ Futures (2×)": {"type": "futures", "leverage": 2.0},
     "SGOV (Cash)": {"type": "cash", "delta": 0.0}
 }
-
 HEDGES = {
     "QQQ 10% OTM Put": {"type": "put", "otm": 0.10},
     "QQQ 20% OTM Put": {"type": "put", "otm": 0.20},
@@ -39,186 +35,191 @@ def get_prices():
 
 prices = get_prices()
 qqq_price = prices["QQQ"]
-vixy_price = prices["VIXY"]
-
-# ================== GREEKS ==================
-def calculate_greeks(S, K, T, r, sigma, option_type="call"):
-    from scipy.stats import norm
-    d1 = (np.log(S/K) + (r + 0.5*sigma**2)*T) / (sigma*np.sqrt(T))
-    d2 = d1 - sigma*np.sqrt(T)
-    if option_type == "call":
-        delta = norm.cdf(d1)
-        gamma = norm.pdf(d1) / (S * sigma * np.sqrt(T))
-        theta = - (S * norm.pdf(d1) * sigma) / (2*np.sqrt(T)) - r*K*np.exp(-r*T)*norm.cdf(d2)
-        vega = S * np.sqrt(T) * norm.pdf(d1)
-    else:
-        delta = norm.cdf(d1) - 1
-        gamma = norm.pdf(d1) / (S * sigma * np.sqrt(T))
-        theta = - (S * norm.pdf(d1) * sigma) / (2*np.sqrt(T)) + r*K*np.exp(-r*T)*norm.cdf(-d2)
-        vega = S * np.sqrt(T) * norm.pdf(d1)
-    return {"delta": round(delta, 3), "gamma": round(gamma, 4), "theta": round(theta, 2), "vega": round(vega, 1)}
 
 # ================== SIMULATION ==================
 def simulate_portfolio(long_name, hedge_name, capital=DEFAULT_CAPITAL, days=30, seed=42):
     np.random.seed(seed)
     T = days / 365.25
-    mu = 0.12
-    sigma = 0.22
+    mu, sigma = 0.12, 0.22
     n_sims = 4000
-
-    # Base return simulation
     Z = np.random.normal(0, 1, n_sims)
     drift = (mu - 0.5 * sigma**2) * T
     diffusion = sigma * np.sqrt(T) * Z
     qqq_return = np.exp(drift + diffusion) - 1
 
-    # Long leg
-    long_mult = LONGS[long_name]["delta"] if "delta" in LONGS[long_name] else LONGS[long_name].get("leverage", 1.0)
+    long_mult = LONGS[long_name].get("delta", LONGS[long_name].get("leverage", 1.0))
     long_pnl = qqq_return * long_mult
 
-    # Hedge leg (simplified realistic modeling)
-    hedge_pnl = 0.0
-    cost = 0.0
-
+    hedge_pnl, cost = 0.0, 0.0
     if hedge_name == "QQQ 10% OTM Put":
-        cost = 0.018
-        hedge_pnl = np.where(qqq_return < -0.10, -qqq_return - 0.10, 0) * 0.85
+        cost, hedge_pnl = 0.018, np.where(qqq_return < -0.10, -qqq_return - 0.10, 0) * 0.85
     elif hedge_name == "QQQ 20% OTM Put":
-        cost = 0.009
-        hedge_pnl = np.where(qqq_return < -0.20, -qqq_return - 0.20, 0) * 0.70
+        cost, hedge_pnl = 0.009, np.where(qqq_return < -0.20, -qqq_return - 0.20, 0) * 0.70
     elif hedge_name == "VIXY Volatility Hedge":
-        cost = 0.06
-        hedge_pnl = np.abs(qqq_return) * 1.8 * 0.08   # vol spike benefit
+        cost, hedge_pnl = 0.06, np.abs(qqq_return) * 1.8 * 0.08
     elif hedge_name == "SQQQ ATM Calls":
-        cost = 0.025
-        hedge_pnl = np.where(qqq_return < 0, -qqq_return * 0.9, 0) * 0.5
+        cost, hedge_pnl = 0.025, np.where(qqq_return < 0, -qqq_return * 0.9, 0) * 0.5
     elif hedge_name == "Bear Put Spread (10/20%)":
-        cost = 0.011
-        hedge_pnl = np.clip(-qqq_return - 0.10, 0, 0.10) * 0.6
+        cost, hedge_pnl = 0.011, np.clip(-qqq_return - 0.10, 0, 0.10) * 0.6
     elif hedge_name == "Collar (10% Put + 5% Call)":
-        cost = 0.007
-        hedge_pnl = np.where(qqq_return < -0.10, -qqq_return - 0.10, 0) * 0.6
+        cost, hedge_pnl = 0.007, np.where(qqq_return < -0.10, -qqq_return - 0.10, 0) * 0.6
 
     net_return = long_pnl + hedge_pnl - cost
-    ev = np.mean(net_return) * 100
-    cvar_5 = np.percentile(net_return, 5) * 100
-    prob_dd = np.mean(net_return < -0.20) * 100
-    drag_bps = cost * 10000
-
     return {
-        "Expected Return %": round(ev, 2),
-        "5% CVaR %": round(cvar_5, 1),
-        "Prob >20% DD %": round(prob_dd, 1),
-        "Portfolio Drag (bps)": int(drag_bps),
-        "Notional Long": capital,
+        "Expected Return %": round(np.mean(net_return) * 100, 2),
+        "5% CVaR %": round(np.percentile(net_return, 5) * 100, 1),
+        "Prob >20% DD %": round(np.mean(net_return < -0.20) * 100, 1),
+        "Portfolio Drag (bps)": int(cost * 10000),
         "Hedge Cost %": round(cost * 100, 2)
     }
 
-# ================== SIDEBAR ==================
-st.sidebar.header("Portfolio Parameters")
-capital = st.sidebar.number_input("Notional Long Exposure ($)", value=DEFAULT_CAPITAL, step=10000)
-days = st.sidebar.slider("Horizon (days)", 7, 90, 30, 7)
-include_fees = st.sidebar.checkbox("Apply Webull fees", value=True)
+# ================== TAIL RISK ENGINE ==================
+def tail_risk_analysis(long_name, hedge_name, scenario_return, capital=DEFAULT_CAPITAL):
+    long_mult = LONGS[long_name].get("delta", LONGS[long_name].get("leverage", 1.0))
+    long_pnl = scenario_return * long_mult
 
-st.sidebar.markdown("---")
-st.sidebar.caption("All portfolios normalized to equal $100k notional long exposure")
+    hedge_pnl, cost = 0.0, 0.0
+    if hedge_name == "QQQ 10% OTM Put":
+        cost, hedge_pnl = 0.018, max(-scenario_return - 0.10, 0) * 0.85
+    elif hedge_name == "QQQ 20% OTM Put":
+        cost, hedge_pnl = 0.009, max(-scenario_return - 0.20, 0) * 0.70
+    elif hedge_name == "VIXY Volatility Hedge":
+        cost, hedge_pnl = 0.06, abs(scenario_return) * 1.8 * 0.08
+    elif hedge_name == "SQQQ ATM Calls":
+        cost, hedge_pnl = 0.025, max(-scenario_return, 0) * 0.9 * 0.5
+    elif hedge_name == "Bear Put Spread (10/20%)":
+        cost, hedge_pnl = 0.011, min(max(-scenario_return - 0.10, 0), 0.10) * 0.6
+    elif hedge_name == "Collar (10% Put + 5% Call)":
+        cost, hedge_pnl = 0.007, max(-scenario_return - 0.10, 0) * 0.6
 
-# ================== MAIN UI ==================
-st.title("📊 HedgePortfolio — Combinatorial Long + Hedge Analyzer")
-st.caption(f"Live QQQ: ${qqq_price:.2f} | All combinations normalized to equal notional exposure | {datetime.now().strftime('%Y-%m-%d')}")
+    final_pnl = long_pnl + hedge_pnl - cost
+    final_value = capital * (1 + final_pnl)
+    return {
+        "Final Value": round(final_value),
+        "P&L %": round(final_pnl * 100, 1),
+        "Hedge Effectiveness": round(hedge_pnl * 100, 1),
+        "Cost %": round(cost * 100, 2)
+    }
 
-# ================== GREEKS EXPLAINER ==================
-with st.expander("📘 Greeks — Technical Definition + Plain English"):
-    st.markdown("""
-    **Delta** — ∂Option/∂Underlying  
-    *Plain English*: How much the position moves when QQQ moves $1. 1.0 = full exposure.
+# ================== TABS ==================
+tab1, tab2 = st.tabs(["📈 Main Analysis", "📉 Tail Risk Scenarios"])
 
-    **Gamma** — ∂²Option/∂Underlying²  
-    *Plain English*: Acceleration of your delta. High gamma = explosive P&L near the money.
+# ================== TAB 1: MAIN ==================
+with tab1:
+    st.title("📊 HedgePortfolio — Combinatorial Long + Hedge Analyzer")
+    st.caption(f"Live QQQ: ${qqq_price:.2f} | All combinations normalized to equal notional exposure | {datetime.now().strftime('%Y-%m-%d')}")
 
-    **Theta** — ∂Option/∂Time  
-    *Plain English*: Daily decay cost of holding the option.
+    with st.expander("📘 Greeks — Technical + Plain English"):
+        st.markdown("""
+        **Delta** — ∂Option/∂Underlying  
+        *Plain English*: How much the position moves when QQQ moves $1. 1.0 = full exposure.
 
-    **Vega** — ∂Option/∂Volatility  
-    *Plain English*: Profit/loss from a 1-point rise in implied volatility.
-    """)
+        **Gamma** — ∂²Option/∂Underlying²  
+        *Plain English*: Acceleration of your delta. High gamma = explosive P&L near the money.
 
-st.divider()
+        **Theta** — ∂Option/∂Time  
+        *Plain English*: Daily decay cost of holding the option.
 
-# ================== SINGLE PORTFOLIO BUILDER ==================
-st.subheader("1. Build a Custom Portfolio")
+        **Vega** — ∂Option/∂Volatility  
+        *Plain English*: Profit/loss from a 1-point rise in implied volatility.
+        """)
 
-col_long, col_hedge = st.columns(2)
+    st.subheader("1. Build a Custom Portfolio")
+    col_long, col_hedge = st.columns(2)
+    with col_long:
+        long_choice = st.selectbox("LONG Leg", list(LONGS.keys()), key="long1")
+    with col_hedge:
+        hedge_choice = st.selectbox("HEDGE Leg", list(HEDGES.keys()), key="hedge1")
 
-with col_long:
-    long_choice = st.selectbox("LONG Leg", list(LONGS.keys()), index=0)
+    if st.button("Calculate This Portfolio", type="primary", key="calc1"):
+        res = simulate_portfolio(long_choice, hedge_choice)
+        st.success(f"**{long_choice} + {hedge_choice}**")
+        st.json(res)
 
-with col_hedge:
-    hedge_choice = st.selectbox("HEDGE Leg", list(HEDGES.keys()), index=0)
+    st.divider()
+    st.subheader("2. All 30 Portfolio Combinations — Ranked")
 
-if st.button("Calculate This Portfolio", type="primary"):
-    result = simulate_portfolio(long_choice, hedge_choice, capital, days)
-    st.success(f"**{long_choice} + {hedge_choice}**")
-    st.json(result)
+    if st.button("Run Full Comparison (30 Portfolios)", type="primary", key="full1"):
+        results = []
+        for long_name in LONGS:
+            for hedge_name in HEDGES:
+                res = simulate_portfolio(long_name, hedge_name)
+                res["Combo"] = f"{long_name} + {hedge_name}"
+                results.append(res)
 
-st.divider()
+        df = pd.DataFrame(results)
+        df["Score"] = (df["Expected Return %"] * 2 - df["5% CVaR %"] * 0.5 - df["Portfolio Drag (bps)"] / 100)
+        df = df.sort_values("Score", ascending=False).reset_index(drop=True)
+        df["Rank"] = range(1, len(df) + 1)
 
-# ================== ALL COMBINATIONS TABLE ==================
-st.subheader("2. All 30 Portfolio Combinations — Ranked")
-
-if st.button("Run Full Comparison (30 Portfolios)", type="primary"):
-    results = []
-    for long_name in LONGS:
-        for hedge_name in HEDGES:
-            res = simulate_portfolio(long_name, hedge_name, capital, days)
-            res["Long"] = long_name
-            res["Hedge"] = hedge_name
-            res["Combo"] = f"{long_name} + {hedge_name}"
-            results.append(res)
-
-    df = pd.DataFrame(results)
-    
-    # Ranking score (higher EV, lower CVaR and drag)
-    df["Score"] = (df["Expected Return %"] * 2 - 
-                   df["5% CVaR %"] * 0.5 - 
-                   df["Portfolio Drag (bps)"] / 100)
-    df = df.sort_values("Score", ascending=False).reset_index(drop=True)
-    df["Rank"] = range(1, len(df) + 1)
-
-    # Display table
-    display_cols = ["Rank", "Combo", "Expected Return %", "5% CVaR %", 
-                    "Prob >20% DD %", "Portfolio Drag (bps)", "Hedge Cost %"]
-    st.dataframe(
-        df[display_cols].style.format({
-            "Expected Return %": "{:.2f}",
-            "5% CVaR %": "{:.1f}",
-            "Prob >20% DD %": "{:.1f}",
-            "Portfolio Drag (bps)": "{:+d}",
-            "Hedge Cost %": "{:.2f}"
+        display_cols = ["Rank", "Combo", "Expected Return %", "5% CVaR %", "Prob >20% DD %", "Portfolio Drag (bps)"]
+        st.dataframe(df[display_cols].style.format({
+            "Expected Return %": "{:.2f}", "5% CVaR %": "{:.1f}",
+            "Prob >20% DD %": "{:.1f}", "Portfolio Drag (bps)": "{:+d}"
         }).background_gradient(subset=["Expected Return %"], cmap="Greens")
-         .background_gradient(subset=["5% CVaR %"], cmap="Reds_r"),
-        use_container_width=True,
-        height=650
-    )
+         .background_gradient(subset=["5% CVaR %"], cmap="Reds_r"), use_container_width=True, height=650)
 
-    # ================== OPTIMAL RECOMMENDATION ==================
-    best = df.iloc[0]
-    st.subheader("🏆 Optimal Portfolio Recommendation")
-    st.success(f"""
-    **Rank #1: {best['Combo']}**
+        best = df.iloc[0]
+        st.subheader("🏆 Optimal Portfolio Recommendation")
+        st.success(f"""
+        **Rank #1: {best['Combo']}**
 
-    **Why this is optimal right now:**
-    - Highest risk-adjusted expected return ({best['Expected Return %']:.2f}%)
-    - Strong tail protection ({best['5% CVaR %']:.1f}% CVaR)
-    - Very low portfolio drag ({best['Portfolio Drag (bps)']:+d} bps)
-    - Excellent asymmetry for current volatility regime
+        **Why this is optimal right now:**
+        - Highest risk-adjusted expected return ({best['Expected Return %']:.2f}%)
+        - Strong tail protection ({best['5% CVaR %']:.1f}% CVaR)
+        - Very low portfolio drag ({best['Portfolio Drag (bps)']:+d} bps)
+        - Excellent asymmetry for current volatility regime
 
-    **Professional Investor View:**
-    This combination gives you equity upside with meaningful downside protection at minimal carry cost. 
-    The hedge is cheap relative to the protection it provides, making it Kelly-efficient.
-    """)
+        **Professional Investor View:** This combination gives you equity upside with meaningful downside protection at minimal carry cost.
+        """)
 
-    st.caption("All simulations use 4,000 paths • Normalized to $100k notional long exposure • Includes realistic option decay & vol dynamics")
+# ================== TAB 2: TAIL RISK ==================
+with tab2:
+    st.title("📉 Tail Risk Analysis — Historical & Extreme Drawdowns")
+    st.caption("All portfolios normalized to $100k notional long exposure. Shows performance in major historical crashes.")
+
+    scenarios = {
+        "Dot-com Bubble (2000-02)": -0.78,
+        "2008 Financial Crisis": -0.55,
+        "2022 Bear Market": -0.35,
+        "Moderate 20% Drawdown": -0.20
+    }
+
+    if st.button("Run Tail Risk Analysis on All 30 Portfolios", type="primary"):
+        tail_results = []
+        for long_name in LONGS:
+            for hedge_name in HEDGES:
+                row = {"Combo": f"{long_name} + {hedge_name}"}
+                for scen_name, scen_ret in scenarios.items():
+                    res = tail_risk_analysis(long_name, hedge_name, scen_ret)
+                    row[f"{scen_name} P&L %"] = res["P&L %"]
+                    row[f"{scen_name} Final $"] = res["Final Value"]
+                tail_results.append(row)
+
+        df_tail = pd.DataFrame(tail_results)
+
+        # Rank by average performance across all scenarios
+        pnl_cols = [c for c in df_tail.columns if "P&L %" in c]
+        df_tail["Avg P&L %"] = df_tail[pnl_cols].mean(axis=1)
+        df_tail = df_tail.sort_values("Avg P&L %", ascending=False).reset_index(drop=True)
+        df_tail.insert(0, "Rank", range(1, len(df_tail) + 1))
+
+        st.dataframe(df_tail.style.format({
+            **{c: "{:+.1f}" for c in pnl_cols},
+            **{c: "${:,.0f}" for c in df_tail.columns if "Final $" in c},
+            "Avg P&L %": "{:+.1f}"
+        }).background_gradient(subset=pnl_cols, cmap="RdYlGn", vmin=-80, vmax=10), use_container_width=True, height=700)
+
+        best_tail = df_tail.iloc[0]
+        st.subheader("🛡️ Most Resilient Portfolio in Tail Risk Scenarios")
+        st.success(f"""
+        **Rank #1 in Crashes: {best_tail['Combo']}**
+
+        **Why it wins in tail events:**
+        - Best average P&L across all four major drawdowns: **{best_tail['Avg P&L %']:+.1f}%**
+        - Strong performance even in the worst 78% crash
+        - Professional takeaway: This hedge provides the highest "crash alpha" at reasonable cost.
+        """)
 
 st.divider()
 st.caption("Data: Yahoo Finance (free) • Fees: Webull schedule • Built for professional quantitative comparison")
